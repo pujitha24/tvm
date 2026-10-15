@@ -18,20 +18,15 @@
 
 set -euxo pipefail
 
-BUILD_DIR=$1
-mkdir -p "$BUILD_DIR"
-cd "$BUILD_DIR"
-cp ../cmake/config.cmake .
-
-echo set\(USE_SORT ON\) >> config.cmake
-echo set\(USE_DNNL ON\) >> config.cmake
-echo set\(USE_EXAMPLE_NPU_CODEGEN ON\) >> config.cmake
-echo set\(USE_EXAMPLE_NPU_RUNTIME ON\) >> config.cmake
-echo set\(USE_LLVM \"/usr/bin/llvm-config-17 --link-static\"\) >> config.cmake
-echo set\(CMAKE_CXX_FLAGS \"-Wno-error=range-loop-construct -Wno-error=comment\"\) >> config.cmake
-echo set\(HIDE_PRIVATE_SYMBOLS ON\) >> config.cmake
-echo set\(USE_TENSORFLOW_PATH \"/tensorflow\"\) >> config.cmake
-echo set\(USE_TFLITE \"/opt/tflite\"\) >> config.cmake
-echo set\(USE_FLATBUFFERS_PATH \"/flatbuffers\"\) >> config.cmake
-echo set\(USE_CCACHE OFF\) >> config.cmake
-echo set\(SUMMARIZE ON\) >> config.cmake
+source ./tests/scripts/task_build_dependencies.sh
+export CMAKE_ARGS="
+    -DUSE_SORT=ON
+    -DCMAKE_CXX_FLAGS=-Werror
+    -DHIDE_PRIVATE_SYMBOLS=ON
+    -DUSE_CCACHE=OFF
+    -DSUMMARIZE=ON
+    -DTVM_USE_INSTALLED_TIRX=ON
+    -DUSE_GTEST=ON
+    -DBUILD_TESTING=ON
+"
+uv build --wheel --no-build-isolation --offline --python python3

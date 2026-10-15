@@ -27,30 +27,28 @@ try {
 ci = evaluate(helper_source)
 ci.start()
 
+docker_run += ' --env TVM_TEST_USE_WHEEL=1'
+
 stage('Build') {
   ci.with_node(instance: 'ARM-GRAVITON3-SPOT', retry_instance: 'ARM-GRAVITON3',
     name: 'BUILD: arm', folder: 'tvm/build-arm', variables: ['PLATFORM=arm']) {
     ci.docker_init(images.ci_arm)
-    sh(
-      script: "${docker_run} ${images.ci_arm} ./tests/scripts/task_config_build_arm.sh build",
-      label: 'Create ARM CMake config',
-    )
-    sh (
-      script: "${docker_run} --env CI_NUM_EXECUTORS ${images.ci_arm} ./tests/scripts/task_build.py --sccache-bucket tvm-sccache-prod --sccache-region us-west-2 --build-dir build",
-      label: 'Run CMake build',
-    )
-    sh (
-      script: """
-        set -eux
-        ${docker_run} ${images.ci_arm} python3 ./tests/scripts/task_build.py \
-          --sccache-bucket tvm-sccache-prod \
-          --sccache-region us-west-2 \
-          --cmake-target cpptest \
-          --cmake-target tirx_cpptest \
-          --build-dir build
-        """,
-      label: 'Make C++ tests',
-    )
-    ci.upload_artifacts('arm', '--artifact tvm_lib --artifact cpptest')
+    withEnv(ci.build_environment()) {
+      sh(
+        script: """${docker_run} ${images.ci_arm} bash -euo pipefail -c '
+          rm -rf dist
+          uv pip install --python python3 --target build/wheel-build-deps "scikit-build-core>=0.11,!=1.1.0" "setuptools-scm>=8" "cython>=3.2.8"
+          PYTHONPATH="\$PWD/build/wheel-build-deps" uv build --wheel --no-build-isolation --offline --python python3 --out-dir dist ./3rdparty/tvm-ffi
+          SKBUILD_CMAKE_BUILD_TYPE=RelWithDebInfo SKBUILD_BUILD_DIR="\$PWD/build/tirx-wheel" SKBUILD_BUILD_TARGETS="all;tirx_cpptest" ./tirx/tests/scripts/task_build_arm.sh
+          ./build/tirx-wheel/tirx_cpptest
+          SKBUILD_CMAKE_BUILD_TYPE=RelWithDebInfo SKBUILD_BUILD_DIR=build SKBUILD_BUILD_TARGETS="all;cpptest" ./tests/scripts/task_build_arm.sh
+          ./build/cpptest
+          sccache --show-stats
+        '""",
+        label: 'Build arm wheels and C++ tests',
+      )
+    }
+    ci.upload_artifacts('arm', '--path "dist/*.whl"')
+
   }
 }

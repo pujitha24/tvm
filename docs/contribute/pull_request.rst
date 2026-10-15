@@ -186,31 +186,64 @@ locally beforehand to reduce reviewers' burden and speedup review process.
 
 Docker (recommended)
 ^^^^^^^^^^^^^^^^^^^^
-``tests/scripts/ci.py`` replicates the CI environment locally and provides a user-friendly interface.
-The same Docker images and scripts used in CI are used directly to run tests. It also deposits builds
-in different folders so you can maintain multiple test environments without rebuilding from scratch
-each time (e.g. you can test a change in CPU and GPU while retaining incremental rebuilds).
+Use ``docker/bash.sh`` with the same platform build and test scripts used in CI.
+Run these commands from the repository root. The CPU and GPU Docker images are
+large and may take some time to download on their first use.
 
 .. code:: bash
 
-    # see all available platforms
-    python tests/scripts/ci.py --help
-    python tests/scripts/ci.py cpu --help
+    # show Docker options
+    docker/bash.sh --help
 
-    # run the CPU build in the ci_cpu docker container (build will be left in
-    # the build-cpu/ folder)
-    # note: the CPU and GPU Docker images are quite large and may take some
-    # time to download on their first use
-    python tests/scripts/ci.py cpu
+    # build FFI, TIRx, and TVM wheels in order, then run each package
+    # C++ tests from the same native build
+    docker/bash.sh ci_cpu bash -euo pipefail -c '
+        rm -rf dist
+        uv pip install --python python3 --target build/wheel-build-deps "scikit-build-core>=0.11,!=1.1.0" "setuptools-scm>=8" "cython>=3.2.8"
+        PYTHONPATH="$PWD/build/wheel-build-deps" uv build --wheel --no-build-isolation --offline --python python3 --out-dir dist ./3rdparty/tvm-ffi
+        SKBUILD_CMAKE_BUILD_TYPE=RelWithDebInfo SKBUILD_BUILD_DIR="$PWD/build/tirx-wheel" SKBUILD_BUILD_TARGETS="all;tirx_cpptest" ./tirx/tests/scripts/task_build_cpu.sh
+        ./build/tirx-wheel/tirx_cpptest
+        SKBUILD_CMAKE_BUILD_TYPE=RelWithDebInfo SKBUILD_BUILD_DIR=build SKBUILD_BUILD_TARGETS="all;cpptest" ./tests/scripts/task_build_cpu.sh
+        ./build/cpptest
+        sccache --show-stats
+    '
 
-    # run the CPU build in the ci_cpu docker container and then run unittests
-    python tests/scripts/ci.py cpu --unittest
+    # install the wheels from dist/ and run Python unit tests
+    docker/bash.sh --env TVM_TEST_USE_WHEEL=1 ci_cpu tests/scripts/task_python_unittest.sh
 
-    # quickly iterate by running a specific test and skipping the rebuild each time
-    python tests/scripts/ci.py cpu --skip-build --tests tests/python/s_tir/schedule/test_tir_schedule_rolling_buffer.py::test_upscale
+    # reuse the wheels to run a selected test
+    docker/bash.sh --env TVM_TEST_USE_WHEEL=1 ci_cpu tests/scripts/task_python_unittest.sh \
+        tests/python/s_tir/schedule/test_tir_schedule_rolling_buffer.py::test_upscale
 
-    # run the CPU build and drop into a shell in the container
-    python tests/scripts/ci.py cpu --interactive
+    # enter an interactive container and install the wheels for that shell
+    docker/bash.sh ci_cpu
+    unset PYTHONPATH TVM_LIBRARY_PATH TVM_FFI_LIBRARY_PATH TVM_TIRX_LIBRARY_PATH
+    export PYTHONNOUSERSITE=1 TVM_HOME="$PWD"
+    uv pip install --python python3 --target .local/python --no-deps apache-tvm-ffi-orcjit==0.1.2
+    uv pip install --python python3 --target .local/python --no-deps --offline --reinstall \
+        dist/apache_tvm-*.whl dist/apache_tvm_ffi-*.whl dist/apache_tvm_tirx-*.whl
+    export PYTHONPATH="$PWD/.local/python"
+    python3 -m pytest tests/python/s_tir/schedule/test_tir_schedule_rolling_buffer.py
+    exit
+
+Rebuild the wheels after changing TVM code. For GPU tests, use a host with an
+NVIDIA GPU and Docker GPU support:
+
+.. code:: bash
+
+    docker/bash.sh --no-gpu ci_gpu bash -euo pipefail -c '
+        rm -rf dist
+        uv pip install --python python3 --target build/wheel-build-deps "scikit-build-core>=0.11,!=1.1.0" "setuptools-scm>=8" "cython>=3.2.8"
+        PYTHONPATH="$PWD/build/wheel-build-deps" uv build --wheel --no-build-isolation --offline --python python3 --out-dir dist ./3rdparty/tvm-ffi
+        SKBUILD_CMAKE_BUILD_TYPE=RelWithDebInfo SKBUILD_BUILD_DIR="$PWD/build/tirx-wheel" ./tirx/tests/scripts/task_build_gpu.sh
+        SKBUILD_CMAKE_BUILD_TYPE=RelWithDebInfo SKBUILD_BUILD_DIR=build ./tests/scripts/task_build_gpu.sh
+        sccache --show-stats
+    '
+    docker/bash.sh --env TVM_TEST_USE_WHEEL=1 ci_gpu tests/scripts/task_python_unittest_gpuonly.sh
+
+Native builds use ``build/`` and wheels use ``dist/``. Clean these directories
+and run the matching platform build when switching test environments.
+For lint checks, use ``pre-commit run --files <changed-file>...``.
 
 We regularly update our docker images and, over time, stale images may unnecessarily consume disk
 space. You can remove stale images that aren't used in the presently checked-out branch plus any

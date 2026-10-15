@@ -29,21 +29,35 @@ try {
 ci = evaluate(helper_source)
 ci.start()
 
+docker_run += ' --env TVM_TEST_USE_WHEEL=1'
+
 stage('Build') {
   ci.with_node(instance: 'CPU-SPOT', retry_instance: 'CPU',
     name: 'BUILD: GPU', folder: 'tvm/build-gpu', variables: ['PLATFORM=gpu']) {
     ci.docker_init(images.ci_gpu)
-    sh "${docker_run} --no-gpu ${images.ci_gpu} ./tests/scripts/task_config_build_gpu.sh build"
-    sh (
-      script: "${docker_run} --env CI_NUM_EXECUTORS ${images.ci_gpu} --no-gpu ./tests/scripts/task_build.py --sccache-bucket tvm-sccache-prod --sccache-region us-west-2 --build-dir build",
-      label: 'Run CMake build',
-    )
-    ci.upload_artifacts('gpu', '--artifact tvm_lib --artifact tvm_lib_gpu_extra')
+    withEnv(ci.build_environment()) {
+      sh(
+        script: """${docker_run} --no-gpu ${images.ci_gpu} bash -euo pipefail -c '
+          rm -rf dist
+          uv pip install --python python3 --target build/wheel-build-deps "scikit-build-core>=0.11,!=1.1.0" "setuptools-scm>=8" "cython>=3.2.8"
+          PYTHONPATH="\$PWD/build/wheel-build-deps" uv build --wheel --no-build-isolation --offline --python python3 --out-dir dist ./3rdparty/tvm-ffi
+          SKBUILD_CMAKE_BUILD_TYPE=RelWithDebInfo SKBUILD_BUILD_DIR="\$PWD/build/tirx-wheel" ./tirx/tests/scripts/task_build_gpu.sh
+          SKBUILD_CMAKE_BUILD_TYPE=RelWithDebInfo SKBUILD_BUILD_DIR=build ./tests/scripts/task_build_gpu.sh
+          sccache --show-stats
+        '""",
+        label: 'Build gpu',
+      )
+    }
+    ci.upload_artifacts('gpu', '--path "dist/*.whl"')
 
     // Check the compiler-only GPU configuration after publishing the test build.
     sh 'rm -rf build'
-    sh "${docker_run} --no-gpu ${images.ci_gpu} ./tests/scripts/task_config_build_gpu_other.sh build"
-    sh "${docker_run} --env CI_NUM_EXECUTORS ${images.ci_gpu} --no-gpu ./tests/scripts/task_build.py --sccache-bucket tvm-sccache-prod --sccache-region us-west-2 --cmake-target tvm_runtime --build-dir build"
+    withEnv(ci.build_environment()) {
+      sh(
+        script: "${docker_run} --no-gpu ${images.ci_gpu} ./tests/scripts/task_build_gpu_other.sh",
+        label: 'Build gpu_other',
+      )
+    }
   }
 }
 

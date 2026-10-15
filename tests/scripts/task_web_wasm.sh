@@ -18,10 +18,19 @@
 
 set -euxo pipefail
 
-export PYTHONPATH="$(pwd)/tirx/python:$(pwd)/python"
+if [ "${TVM_TEST_USE_WHEEL:-0}" = "1" ]; then
+    unset PYTHONPATH TVM_LIBRARY_PATH TVM_FFI_LIBRARY_PATH TVM_TIRX_LIBRARY_PATH
+    export PYTHONNOUSERSITE=1 TVM_HOME="$PWD"
+    uv pip install --python python3 --target .local/python --no-deps apache-tvm-ffi-orcjit==0.1.2
+    uv pip install --python python3 --target .local/python --no-deps --offline --reinstall \
+        dist/apache_tvm-*.whl dist/apache_tvm_ffi-*.whl dist/apache_tvm_tirx-*.whl
+    export PYTHONPATH="$PWD/.local/python"
+else
+    export PYTHONPATH="$(pwd)/tirx/python:$(pwd)/python"
 
-# setup tvm-ffi into python folder
-uv pip install -v --target=python ./3rdparty/tvm-ffi/
+    # setup tvm-ffi into python folder
+    uv pip install -v --target=python ./3rdparty/tvm-ffi/
+fi
 
 rm -rf .emscripten_cache
 cd web

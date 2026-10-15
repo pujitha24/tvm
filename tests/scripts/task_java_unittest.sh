@@ -18,8 +18,17 @@
 
 set -euxo pipefail
 
-export PYTHONPATH=tirx/python:python
-export LD_LIBRARY_PATH="lib:${LD_LIBRARY_PATH:-}"
+if [ "${TVM_TEST_USE_WHEEL:-0}" = "1" ]; then
+    unset PYTHONPATH TVM_LIBRARY_PATH TVM_FFI_LIBRARY_PATH TVM_TIRX_LIBRARY_PATH
+    export PYTHONNOUSERSITE=1 TVM_HOME="$PWD"
+    uv pip install --python python3 --target .local/python --no-deps apache-tvm-ffi-orcjit==0.1.2
+    uv pip install --python python3 --target .local/python --no-deps --offline --reinstall \
+        dist/apache_tvm-*.whl dist/apache_tvm_ffi-*.whl dist/apache_tvm_tirx-*.whl
+    export PYTHONPATH="$PWD/.local/python"
+else
+    export PYTHONPATH=tirx/python:python
+    export LD_LIBRARY_PATH="lib:${LD_LIBRARY_PATH:-}"
+fi
 
 # to avoid CI CPU thread throttling.
 export TVM_BIND_THREADS=0

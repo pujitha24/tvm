@@ -294,6 +294,15 @@ install(TARGETS tvm_compiler tvm_runtime_extra
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR})
+foreach(_target fpA_intB_gemm flash_attn)
+  if(TARGET ${_target})
+    tvm_configure_target_library(${_target})
+    install(TARGETS ${_target}
+      ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+      LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+      RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR})
+  endif()
+endforeach()
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} FILES_MATCHING PATTERN "*.h")
 # Parent minRPC compilation retains its own source and private header closure.
 install(DIRECTORY src/runtime/rpc/ DESTINATION src/runtime/rpc FILES_MATCHING PATTERN "*.h" PATTERN "*.cc")

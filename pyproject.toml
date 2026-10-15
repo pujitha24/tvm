@@ -51,6 +51,9 @@ classifiers = [
 ]
 dependencies = ["apache-tvm-tirx==0.1.0a0"]
 
+[project.scripts]
+tvm-config = "tvm.config:__main__"
+
 [project.optional-dependencies]
 torch = ["torch"]
 cuda = ["cuda-bindings"]

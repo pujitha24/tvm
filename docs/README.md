@@ -23,22 +23,45 @@ This folder contains the source of TVM's documentation, hosted at https://tvm.ap
 
 ### With Docker (recommended)
 
-1. Build TVM and the docs inside the [tlcpack/ci-gpu image](https://hub.docker.com/r/tlcpack/ci-gpu) using the [`ci.py`](../tests/scripts/ci.py) script.
+Run these commands from the repository root. The Docker image aliases select
+this checkout's CI images; their first download can take some time.
+
+1. Build the FFI, TIRx, and TVM wheels in dependency order and run the CPU
+   C++ tests, using the same commands as CI:
 
    ```bash
-   # If this runs into errors, try cleaning your 'build' directory
-   python tests/scripts/ci.py docs
-
-   # See other doc building options
-   python tests/scripts/ci.py docs --help
+   docker/bash.sh ci_cpu bash -euo pipefail -c '
+       rm -rf dist
+       uv pip install --python python3 --target build/wheel-build-deps "scikit-build-core>=0.11,!=1.1.0" "setuptools-scm>=8" "cython>=3.2.8"
+       PYTHONPATH="$PWD/build/wheel-build-deps" uv build --wheel --no-build-isolation --offline --python python3 --out-dir dist ./3rdparty/tvm-ffi
+       SKBUILD_CMAKE_BUILD_TYPE=RelWithDebInfo SKBUILD_BUILD_DIR="$PWD/build/tirx-wheel" SKBUILD_BUILD_TARGETS="all;tirx_cpptest" ./tirx/tests/scripts/task_build_cpu.sh
+       ./build/tirx-wheel/tirx_cpptest
+       SKBUILD_CMAKE_BUILD_TYPE=RelWithDebInfo SKBUILD_BUILD_DIR=build SKBUILD_BUILD_TARGETS="all;cpptest" ./tests/scripts/task_build_cpu.sh
+       ./build/cpptest
+       sccache --show-stats
+   '
    ```
 
-2. Serve the docs and visit http://localhost:8000 in your browser
+2. Build the Python documentation without executing tutorials. Install the
+   additional CPU documentation dependencies in the same container as the build:
 
    ```bash
-   # Run an HTTP server you can visit to view the docs in your browser
-   python tests/scripts/ci.py serve-docs
+   docker/bash.sh --env TVM_TEST_USE_WHEEL=1 --env IS_LOCAL=1 \
+       --env PYTHON_DOCS_ONLY=1 --env TVM_TUTORIAL_EXEC_PATTERN=none \
+       ci_cpu bash -c 'tests/scripts/task_install_docs_dependencies.sh && tests/scripts/task_python_docs.sh'
    ```
+
+   The docs script installs the wheels from `dist/`. Rebuild them after changing
+   TVM code; documentation-only edits can reuse the existing wheels.
+
+3. Serve the generated docs and visit http://localhost:8000 in your browser:
+
+   ```bash
+   python3 -m http.server --directory _docs
+   ```
+
+For the full documentation build, including GPU tutorials and non-Python APIs,
+see [Helper Scripts](#helper-scripts) below.
 
 ### Native
 
@@ -88,44 +111,53 @@ This will cause failure in some cases when certain machines do not have necessar
 environment. You can set `TVM_TUTORIAL_EXEC_PATTERN` to only execute
 the path that matches the regular expression pattern.
 
-For example, to only build tutorials under `/get_started/tutorials`, run
+After building GPU wheels as shown below, execute only tutorials under
+`/get_started/tutorials` with:
 
 ```bash
-python tests/scripts/ci.py docs --tutorial-pattern=/get_started/tutorials
+docker/bash.sh --env TVM_TEST_USE_WHEEL=1 --env IS_LOCAL=1 \
+    --env PYTHON_DOCS_ONLY=1 --env TVM_TUTORIAL_EXEC_PATTERN=/get_started/tutorials \
+    ci_gpu tests/scripts/task_python_docs.sh
 ```
 
-To only build one specific file, do
+To execute only one file, use a regular expression matching its name. Quote the
+pattern so the shell preserves the backslash that escapes the dot:
 
 ```bash
-# The slash \ is used to get . in regular expression
-python tests/scripts/ci.py docs --tutorial-pattern=file_name\.py
+docker/bash.sh --env TVM_TEST_USE_WHEEL=1 --env IS_LOCAL=1 \
+    --env PYTHON_DOCS_ONLY=1 --env 'TVM_TUTORIAL_EXEC_PATTERN=file_name\.py' \
+    ci_gpu tests/scripts/task_python_docs.sh
 ```
 
 ## Helper Scripts
 
-The following script mirrors the CI docs pipeline: it runs a sphinx pre-check
-(when not running locally) and then performs a full `make htmldepoly` build,
-including tutorial execution. You will need a GPU CI environment.
+`tests/scripts/task_python_docs.sh` mirrors the CI docs pipeline. It runs a
+Sphinx warning pre-check when `IS_LOCAL=0`, then builds the documentation with
+`make htmldepoly`. `IS_LOCAL=1` skips the pre-check; the final build still checks
+warnings. `PYTHON_DOCS_ONLY=1` skips the C++, Java, and TypeScript API docs for
+local builds.
+
+To run the full build, including tutorial execution and all API docs, use a
+host with an NVIDIA GPU and Docker GPU support:
 
 ```bash
-tests/scripts/task_python_docs.sh
+docker/bash.sh --no-gpu ci_gpu bash -euo pipefail -c '
+    rm -rf dist
+    uv pip install --python python3 --target build/wheel-build-deps "scikit-build-core>=0.11,!=1.1.0" "setuptools-scm>=8" "cython>=3.2.8"
+    PYTHONPATH="$PWD/build/wheel-build-deps" uv build --wheel --no-build-isolation --offline --python python3 --out-dir dist ./3rdparty/tvm-ffi
+    SKBUILD_CMAKE_BUILD_TYPE=RelWithDebInfo SKBUILD_BUILD_DIR="$PWD/build/tirx-wheel" ./tirx/tests/scripts/task_build_gpu.sh
+    SKBUILD_CMAKE_BUILD_TYPE=RelWithDebInfo SKBUILD_BUILD_DIR=build ./tests/scripts/task_build_gpu.sh
+    sccache --show-stats
+'
+docker/bash.sh --env TVM_TEST_USE_WHEEL=1 --env IS_LOCAL=1 \
+    --env PYTHON_DOCS_ONLY=0 --env TVM_TUTORIAL_EXEC_PATTERN=.py \
+    ci_gpu tests/scripts/task_python_docs.sh
+python3 -m http.server --directory _docs
 ```
 
-To build docs locally without executing tutorials (fastest local iteration):
-
-```bash
-cd docs && TVM_TUTORIAL_EXEC_PATTERN=none make html
-```
-
-Note: the sphinx pre-check (warning validation) only runs in CI (`IS_LOCAL=0`).
-`python tests/scripts/ci.py docs` always sets `IS_LOCAL=1` and skips the
-pre-check regardless of other flags.
-
-To run the full build including tutorial executions:
-
-```bash
-python tests/scripts/ci.py docs --full
-```
+Native builds use `build/` and wheels use `dist/`. Clean these directories
+and run the matching platform build when switching between CPU and GPU
+documentation builds.
 
 ## Define the Order of Tutorials
 

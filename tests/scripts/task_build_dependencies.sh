@@ -16,17 +16,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# This file is a compiler test to ensure that runtimes can compile
-# correctly, even if they aren't actively tested in the CI.
-set -euxo pipefail
-
-BUILD_DIR=$1
-mkdir -p "$BUILD_DIR"
-cd "$BUILD_DIR"
-cp ../cmake/config.cmake .
-
-echo set\(USE_OPENCL ON\) >> config.cmake
-echo set\(USE_ROCM ON\) >> config.cmake
-echo set\(CMAKE_CXX_FLAGS -Werror\) >> config.cmake
-echo set\(USE_CCACHE OFF\) >> config.cmake
-echo set\(SUMMARIZE ON\) >> config.cmake
+# Source this helper to use the writable build dependency target.
+BUILD_DEPS="$PWD/build/wheel-build-deps"
+uv pip install --python python3 --target "$BUILD_DEPS" --no-deps --offline --reinstall \
+    dist/apache_tvm_tirx-*.whl
+export PYTHONPATH="$BUILD_DEPS"

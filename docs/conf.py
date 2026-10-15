@@ -50,8 +50,9 @@ if curr_path.name == "_staging":
 else:
     tvm_path = Path(os.pardir)
 
-sys.path.insert(0, str(tvm_path.resolve() / "python"))
-sys.path.insert(0, str(tvm_path.resolve() / "tirx" / "python"))
+if os.environ.get("TVM_DOCS_USE_WHEEL") != "1":
+    sys.path.insert(0, str(tvm_path.resolve() / "python"))
+    sys.path.insert(0, str(tvm_path.resolve() / "tirx" / "python"))
 sys.path.insert(0, str(tvm_path.resolve() / "docs"))
 
 # -- General configuration ------------------------------------------------

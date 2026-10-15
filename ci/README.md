@@ -93,3 +93,13 @@ Other jobs run in GitHub Actions for Windows and MacOS jobs.
 The native Groovy entry points in `ci/jenkins/generated/` load shared helpers
 from `common.groovy`. Edit these sources directly; no generation step is needed.
 See comments in [common.groovy](jenkins/generated/common.groovy) for shared utility options and trust constraints.
+
+The native Jenkins pipelines call `tests/scripts/task_build_<platform>.sh`.
+Each root script invokes its counterpart under `tirx/tests/scripts/` to build
+pinned-source FFI and TIRx wheels, then builds TVM against that installed core. All three wheel artifacts share
+the checkout-root `dist/` directory. Platform options use direct CMake `-D` flags.
+C++ tests run in the native build that produced each wheel. Consumers install the
+three transferred wheels offline without dependencies into `.local/python` and
+use its absolute path as `PYTHONPATH`; `TVM_HOME` retains checkout resources.
+Groovy sets the cache, parallelism and C/C++ compiler-launcher environment values;
+`docker/bash.sh` forwards them to the build scripts.

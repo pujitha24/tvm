@@ -18,14 +18,18 @@
 
 set -euxo pipefail
 
-BUILD_DIR=$1
-mkdir -p "$BUILD_DIR"
-cd "$BUILD_DIR"
-cp ../cmake/config.cmake .
-
-echo set\(USE_SORT ON\) >> config.cmake
-echo set\(USE_RPC ON\) >> config.cmake
-echo set\(USE_LLVM llvm-config-17\) >> config.cmake
-echo set\(CMAKE_CXX_FLAGS -Werror\) >> config.cmake
-echo set\(USE_CCACHE OFF\) >> config.cmake
-echo set\(SUMMARIZE ON\) >> config.cmake
+source ./tirx/tests/scripts/task_build_dependencies.sh
+export CMAKE_ARGS="
+    -DUSE_CUDA=ON
+    -DUSE_VULKAN=ON
+    -DUSE_OPENCL=ON
+    -DUSE_OPENCL_GTEST=/googletest
+    -DUSE_LLVM='/usr/bin/llvm-config-15 --link-static'
+    -DCMAKE_CXX_FLAGS=-Werror
+    -DHIDE_PRIVATE_SYMBOLS=ON
+    -DCMAKE_CUDA_ARCHITECTURES=75
+    -DUSE_CCACHE=OFF
+    -DSUMMARIZE=ON
+    -DTVM_OPENCL_HEADERS_ROOT=$PWD/3rdparty/OpenCL-Headers
+"
+uv build --wheel --no-build-isolation --offline --python python3 --out-dir dist ./tirx
