@@ -22,7 +22,10 @@ import org.jenkinsci.plugins.pipeline.modeldefinition.Utils
 image_platforms = [ci_arm: 'ARM', ci_cpu: 'CPU', ci_gpu: 'GPU', ci_wasm: 'CPU']
 // Resolve Hub inputs through the caller account ECR cache; false keeps public names.
 enable_docker_hub_cache = true
-env.SCCACHE_BUCKET = 'tvm-sccache-prod'
+// Use local caching when AWS credentials are unavailable to the container.
+if (env.AWS_ACCESS_KEY_ID) {
+  env.SCCACHE_BUCKET = env.SCCACHE_BUCKET ?: 'tvm-sccache-prod'
+}
 env.SCCACHE_REGION = 'us-west-2'
 max_time = 180
 docker_run = 'docker/bash.sh --env CI --env PLATFORM --env TEST_STEP_NAME' +
